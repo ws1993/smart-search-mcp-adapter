@@ -1,0 +1,36 @@
+{
+  "name": "smart-search-mcp-adapter",
+  "version": "1.0.0",
+  "description": "MCP adapter for smart-search CLI, providing smart web search capabilities in Cherry Studio and other MCP clients",
+  "main": "smart-search-mcp.js",
+  "scripts": {
+    "start": "node smart-search-mcp.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mcp",
+    "smart-search",
+    "web-search",
+    "cherry-studio",
+    "model-context-protocol",
+    "search",
+    "fetch",
+    "map"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/smart-search-mcp-adapter"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "bin": {
+    "smart-search-mcp": "./smart-search-mcp.js"
+  },
+  "files": [
+    "smart-search-mcp.js",
+    "README.md"
+  ]
+}
