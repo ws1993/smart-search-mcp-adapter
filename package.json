@@ -21,7 +21,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/smart-search-mcp-adapter"
+    "url": "https://github.com/ws1993/smart-search-mcp-adapter"
   },
   "engines": {
     "node": ">=14.0.0"
