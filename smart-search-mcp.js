@@ -6,6 +6,9 @@
 
 // MCP STDIO 传输协议：换行分隔的 JSON-RPC 2.0（NDJSON）
 
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
 const { spawn } = require("child_process");
 
 const readline = require("readline");
@@ -43,6 +46,50 @@ process.on("unhandledRejection", (e) => {
 function send(obj) {
 
   process.stdout.write(JSON.stringify(obj) + "\n");
+
+}
+
+function getAuditLogPath() {
+
+  const configured = process.env.SMART_SEARCH_MCP_AUDIT_LOG;
+
+  if (configured && configured.trim()) return configured.trim();
+
+  return path.join(os.tmpdir(), "smart-search-mcp-audit.jsonl");
+
+}
+
+function writeAuditEvent(event) {
+
+  try {
+
+    const entry = {
+
+      ts: new Date().toISOString(),
+
+      ...event,
+
+    };
+
+    fs.appendFileSync(getAuditLogPath(), JSON.stringify(entry) + "\n", "utf8");
+
+  } catch (err) {
+
+    log("AUDIT ERROR: " + err.message);
+
+  }
+
+}
+
+function logResearchEvent(researchId, message, extra) {
+
+  log("[" + researchId + "] " + message);
+
+  if (extra) {
+
+    writeAuditEvent({ research_id: researchId, ...extra });
+
+  }
 
 }
 
@@ -280,6 +327,60 @@ const TOOLS = [
 
     },
 
+  },
+
+  {
+
+    name: "smart_deep_run",
+
+    description:
+
+      "自动继续执行 Deep Research 会话，直到研究完成、遇到 needs_input、或达到步骤上限。默认会尝试从已有搜索结果中自动选择最优候选 URL 继续 fetch 步骤，适合对话式 MCP 自动驾驶场景。",
+
+    inputSchema: {
+
+      type: "object",
+
+      properties: {
+
+        research_id: { type: "string", description: "smart_deep_research 返回的研究会话 ID" },
+
+        max_steps: { type: "number", description: "本次自动执行的最大步骤数", default: 20 },
+
+        selected_urls: {
+
+          type: "object",
+
+          description: "可选：手动指定某些步骤的 URL，格式如 {\"step_3\": \"https://example.com\"}",
+
+          additionalProperties: { type: "string" },
+
+        },
+
+        auto_select_urls: { type: "boolean", description: "是否自动从已有证据中挑选候选 URL 继续执行 fetch 步骤", default: true },
+
+        format: { type: "string", enum: ["json", "markdown"], default: "json" },
+
+      },
+
+      required: ["research_id"],
+
+    },
+
+  },
+
+  {
+    name: "smart_deep_status",
+    description:
+      "查询某个 Deep Research 会话的当前状态，不执行新步骤。用于追踪 research_id 的已完成步骤、待执行步骤、最近一步结果，以及是否还需要继续执行或补充输入。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        research_id: { type: "string", description: "要查询的研究会话 ID" },
+        format: { type: "string", enum: ["json", "markdown"], default: "json" },
+      },
+      required: ["research_id"],
+    },
   },
 
   {
@@ -748,6 +849,242 @@ function summarizeEvidence(stepResults) {
 
 }
 
+function safeParseJson(text) {
+
+  try {
+
+    return JSON.parse(text);
+
+  } catch (_err) {
+
+    return null;
+
+  }
+
+}
+
+function normalizeCandidateUrl(url, meta = {}) {
+
+  if (!url || typeof url !== "string") return null;
+
+  const trimmed = url.trim();
+
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+
+  let hostname = "";
+
+  try {
+
+    hostname = new URL(trimmed).hostname.toLowerCase();
+
+  } catch (_err) {
+
+    return null;
+
+  }
+
+  const score =
+
+    (/(^|\.)samsung\.com$/i.test(hostname) ? 100 : 0) +
+
+    (/nvme|ssd|pm9|mzvl|semiconductor|support/i.test(trimmed) ? 20 : 0) +
+
+    (/forum|reddit|community/i.test(hostname) ? 5 : 0);
+
+  return {
+
+    url: trimmed,
+
+    title: meta.title || meta.name || meta.text || "",
+
+    source_step: meta.source_step || "",
+
+    score,
+
+  };
+
+}
+
+function collectUrlsFromValue(value, sourceStep, candidates) {
+
+  if (!value) return;
+
+  if (typeof value === "string") {
+
+    const matches = value.match(/https?:\/\/[^\s)\]>"]+/g) || [];
+
+    for (const match of matches) {
+
+      const candidate = normalizeCandidateUrl(match, { source_step: sourceStep });
+
+      if (candidate) candidates.push(candidate);
+
+    }
+
+    return;
+
+  }
+
+  if (Array.isArray(value)) {
+
+    for (const item of value) collectUrlsFromValue(item, sourceStep, candidates);
+
+    return;
+
+  }
+
+  if (typeof value === "object") {
+
+    const directUrl = value.url || value.link || value.href;
+
+    if (typeof directUrl === "string") {
+
+      const candidate = normalizeCandidateUrl(directUrl, {
+
+        title: value.title || value.name || value.text,
+
+        source_step: sourceStep,
+
+      });
+
+      if (candidate) candidates.push(candidate);
+
+    }
+
+    for (const nested of Object.values(value)) collectUrlsFromValue(nested, sourceStep, candidates);
+
+  }
+
+}
+
+function extractCandidateUrls(session) {
+
+  const deduped = new Map();
+
+  for (const result of session.stepResults) {
+
+    const sourceStep = result.step_id;
+
+    const parsed = safeParseJson(result.output);
+
+    const candidates = [];
+
+    collectUrlsFromValue(parsed || result.output, sourceStep, candidates);
+
+    for (const candidate of candidates) {
+
+      const existing = deduped.get(candidate.url);
+
+      if (!existing || candidate.score > existing.score) deduped.set(candidate.url, candidate);
+
+    }
+
+  }
+
+  return Array.from(deduped.values())
+
+    .sort((a, b) => b.score - a.score)
+
+    .slice(0, 5)
+
+    .map((item, index) => ({ ...item, rank: index + 1 }));
+
+}
+
+function getAutoSelectedUrls(session, selectedUrls = {}) {
+
+  const merged = { ...(selectedUrls || {}) };
+
+  const candidates = extractCandidateUrls(session);
+
+  const steps = getPlanSteps(session.plan);
+
+  for (let i = 0; i < steps.length; i += 1) {
+
+    const step = normalizeStep(steps[i], i);
+
+    if (merged[step.id]) continue;
+
+    const needsUrlPlaceholder =
+
+      (typeof step.command === "string" && step.command.includes("<key-url>")) ||
+
+      (step.tool === "fetch" && (!step.url || step.url === "<key-url>")) ||
+
+      (step.tool === "map" && (!step.url || step.url === "<key-url>"));
+
+    if (!needsUrlPlaceholder) continue;
+
+    if (candidates[0]) merged[step.id] = candidates[0].url;
+
+  }
+
+  return { selected_urls: merged, candidate_urls: candidates };
+
+}
+
+function summarizeSession(session, statusOverride) {
+
+  const steps = getPlanSteps(session.plan);
+
+  const completedIds = session.progress.completed;
+
+  const failedIds = session.progress.failed;
+
+  const pendingSteps = steps
+
+    .map(publicStep)
+
+    .filter((step) => !completedIds.has(step.id) && !failedIds.has(step.id));
+
+  const status = statusOverride || session.status || (pendingSteps.length === 0 ? "completed" : session.stepResults.length > 0 ? "in_progress" : "planned");
+
+  return {
+
+    research_id: session.research_id,
+
+    status,
+
+    research_plan: session.plan,
+
+    completed_steps: session.stepResults.map(({ output, ...rest }) => ({ ...rest, output_preview: String(output).slice(0, 1000) })),
+
+    completed_count: session.progress.completed.size,
+
+    failed_steps: Array.from(failedIds),
+
+    pending_steps: pendingSteps,
+
+    pending_count: pendingSteps.length,
+
+    last_step_result: session.stepResults.at(-1) || null,
+
+    evidence_summary: summarizeEvidence(session.stepResults),
+
+    required_inputs: session.required_inputs || [],
+
+    ready_for_answer: status === "completed",
+
+    not_final: status !== "completed",
+
+    next_action: status === "completed"
+
+      ? "ready for final answer based on collected evidence"
+
+      : status === "needs_input"
+
+        ? "provide required selected_urls and call smart_deep_execute again"
+
+        : status === "planned"
+
+          ? "call smart_deep_execute with this research_id"
+
+          : "call smart_deep_execute again to continue",
+
+  };
+
+}
+
 function renderMarkdownResponse(payload) {
 
   const lines = [
@@ -759,6 +1096,10 @@ function renderMarkdownResponse(payload) {
     "- research_id: `" + payload.research_id + "`",
 
     "- status: `" + payload.status + "`",
+
+    "- completed_count: `" + payload.completed_count + "`",
+
+    "- pending_count: `" + payload.pending_count + "`",
 
     "- ready_for_answer: `" + payload.ready_for_answer + "`",
 
@@ -781,6 +1122,16 @@ function renderMarkdownResponse(payload) {
     for (const item of payload.required_inputs) {
 
       lines.push("- `" + item.step_id + "`: " + item.reason);
+
+      if (item.candidate_urls && item.candidate_urls.length > 0) {
+
+        for (const candidate of item.candidate_urls) {
+
+          lines.push("  - [" + (candidate.title || candidate.url) + "](" + candidate.url + ")");
+
+        }
+
+      }
 
     }
 
@@ -810,6 +1161,8 @@ async function createDeepResearch(args) {
 
   RESEARCH_SESSIONS.set(researchId, {
 
+    research_id: researchId,
+
     plan,
 
     progress: { completed: new Set(), failed: new Set() },
@@ -822,25 +1175,27 @@ async function createDeepResearch(args) {
 
     budget,
 
-  });
-
-  const payload = {
-
-    research_id: researchId,
-
     status: "planned",
 
-    research_plan: plan,
+    required_inputs: [],
 
-    pending_steps: steps.map(publicStep),
+  });
 
-    next_action: "call smart_deep_execute with this research_id",
+  logResearchEvent(researchId, "PLANNED " + steps.length + " steps", {
 
-    not_final: true,
+    event: "planned",
 
-  };
+    query: args.query,
 
-  return format === "markdown" ? renderMarkdownResponse({ ...payload, ready_for_answer: false, evidence_summary: "Plan created. No evidence collected yet." }) : JSON.stringify(payload, null, 2);
+    budget,
+
+    step_count: steps.length,
+
+  });
+
+  const payload = summarizeSession(RESEARCH_SESSIONS.get(researchId), "planned");
+
+  return format === "markdown" ? renderMarkdownResponse(payload) : JSON.stringify(payload, null, 2);
 
 }
 
@@ -854,11 +1209,35 @@ async function executeDeepResearch(args) {
 
   const maxSteps = Math.max(1, Number(args.max_steps || 1));
 
+  const autoSelectUrls = args.auto_select_urls !== false;
+
   const steps = getPlanSteps(session.plan);
 
   const completedNow = [];
 
   let lastStepResult = null;
+
+  session.required_inputs = [];
+
+  session.status = session.stepResults.length > 0 ? "in_progress" : "planned";
+
+  const selectedUrlState = autoSelectUrls ? getAutoSelectedUrls(session, args.selected_urls) : {
+
+    selected_urls: { ...(args.selected_urls || {}) },
+
+    candidate_urls: extractCandidateUrls(session),
+
+  };
+
+  logResearchEvent(args.research_id, "EXECUTE max_steps=" + maxSteps, {
+
+    event: "execute_requested",
+
+    max_steps: maxSteps,
+
+    auto_select_urls: autoSelectUrls,
+
+  });
 
   for (let i = 0; i < steps.length && completedNow.length < maxSteps; i += 1) {
 
@@ -866,11 +1245,39 @@ async function executeDeepResearch(args) {
 
     if (session.progress.completed.has(step.id) || session.progress.failed.has(step.id)) continue;
 
-    const built = buildStepArgs(steps[i], i, args.selected_urls, format);
+    logResearchEvent(args.research_id, "STEP " + step.id + " START " + step.tool, {
+
+      event: "step_started",
+
+      step_id: step.id,
+
+      tool: step.tool,
+
+      question: step.question,
+
+    });
+
+    if (selectedUrlState.selected_urls[step.id]) {
+
+      logResearchEvent(args.research_id, "STEP " + step.id + " AUTO_URL " + selectedUrlState.selected_urls[step.id], {
+
+        event: "auto_selected_url",
+
+        step_id: step.id,
+
+        tool: step.tool,
+
+        url: selectedUrlState.selected_urls[step.id],
+
+      });
+
+    }
+
+    const built = buildStepArgs(steps[i], i, selectedUrlState.selected_urls, format);
 
     if (built.needsInput) {
 
-      const payload = buildExecutionPayload(args.research_id, session, steps, "needs_input", lastStepResult, [
+      const requiredInputs = [
 
         {
 
@@ -882,13 +1289,45 @@ async function executeDeepResearch(args) {
 
           candidate_hint: "Use URLs found in earlier search/exa-search results, then call smart_deep_execute again.",
 
+          candidate_urls: selectedUrlState.candidate_urls,
+
         },
 
-      ]);
+      ];
+
+      session.status = "needs_input";
+
+      session.required_inputs = requiredInputs;
+
+      logResearchEvent(args.research_id, "STEP " + step.id + " NEEDS_INPUT", {
+
+        event: "needs_input",
+
+        step_id: step.id,
+
+        tool: step.tool,
+
+        candidate_count: selectedUrlState.candidate_urls.length,
+
+      });
+
+      const payload = buildExecutionPayload(args.research_id, session, steps, "needs_input", lastStepResult, requiredInputs);
 
       return format === "markdown" ? renderMarkdownResponse(payload) : JSON.stringify(payload, null, 2);
 
     }
+
+    logResearchEvent(args.research_id, "STEP " + step.id + " CMD smart-search " + logArgs(built.args), {
+
+      event: "step_command",
+
+      step_id: step.id,
+
+      tool: step.tool,
+
+      command: "smart-search " + logArgs(built.args),
+
+    });
 
     const output = await runSmartSearch(built.args);
 
@@ -914,13 +1353,89 @@ async function executeDeepResearch(args) {
 
     completedNow.push(lastStepResult);
 
+    session.status = "in_progress";
+
+    logResearchEvent(args.research_id, "STEP " + step.id + " DONE", {
+
+      event: "step_completed",
+
+      step_id: step.id,
+
+      tool: step.tool,
+
+      completed_at: lastStepResult.completed_at,
+
+      output_bytes: Buffer.byteLength(String(output), "utf8"),
+
+    });
+
   }
 
   const ready = session.progress.completed.size + session.progress.failed.size >= steps.length;
 
-  const payload = buildExecutionPayload(args.research_id, session, steps, ready ? "completed" : "in_progress", lastStepResult, []);
+  session.status = ready ? "completed" : "in_progress";
 
-  payload.completed_steps = completedNow;
+  session.required_inputs = [];
+
+  logResearchEvent(args.research_id, "STATUS " + session.status, {
+
+    event: "execution_result",
+
+    status: session.status,
+
+    completed_count: session.progress.completed.size,
+
+    pending_count: steps.length - session.progress.completed.size - session.progress.failed.size,
+
+    ready_for_answer: ready,
+
+  });
+
+  const payload = buildExecutionPayload(args.research_id, session, steps, session.status, lastStepResult, []);
+
+  payload.completed_steps_delta = completedNow.map(({ output, ...rest }) => ({ ...rest, output_preview: String(output).slice(0, 1000) }));
+
+  return format === "markdown" ? renderMarkdownResponse(payload) : JSON.stringify(payload, null, 2);
+
+}
+
+async function runDeepResearchUntilBlocked(args) {
+
+  const mergedArgs = {
+
+    ...args,
+
+    max_steps: args.max_steps || 20,
+
+    auto_select_urls: args.auto_select_urls !== false,
+
+  };
+
+  return await executeDeepResearch(mergedArgs);
+
+}
+
+function getDeepResearchStatus(args) {
+
+  const session = RESEARCH_SESSIONS.get(args.research_id);
+
+  if (!session) throw new Error("Unknown or expired research_id: " + args.research_id);
+
+  const format = args.format || "json";
+
+  const payload = summarizeSession(session);
+
+  logResearchEvent(args.research_id, "STATUS_QUERY " + payload.status, {
+
+    event: "status_query",
+
+    status: payload.status,
+
+    completed_count: payload.completed_steps.length,
+
+    pending_count: payload.pending_steps.length,
+
+  });
 
   return format === "markdown" ? renderMarkdownResponse(payload) : JSON.stringify(payload, null, 2);
 
@@ -928,51 +1443,17 @@ async function executeDeepResearch(args) {
 
 function buildExecutionPayload(researchId, session, steps, status, lastStepResult, requiredInputs) {
 
-  const completedIds = session.progress.completed;
+  session.status = status;
 
-  const failedIds = session.progress.failed;
+  session.required_inputs = requiredInputs;
 
-  const pendingSteps = steps
+  const payload = summarizeSession(session, status);
 
-    .map(publicStep)
+  payload.last_step_result = lastStepResult || payload.last_step_result;
 
-    .filter((step) => !completedIds.has(step.id) && !failedIds.has(step.id));
+  payload.required_inputs = requiredInputs;
 
-  const readyForAnswer = status === "completed";
-
-  return {
-
-    research_id: researchId,
-
-    status,
-
-    completed_steps: session.stepResults.map(({ output, ...rest }) => ({ ...rest, output_preview: String(output).slice(0, 1000) })),
-
-    failed_steps: Array.from(failedIds),
-
-    pending_steps: pendingSteps,
-
-    last_step_result: lastStepResult,
-
-    evidence_summary: summarizeEvidence(session.stepResults),
-
-    required_inputs: requiredInputs,
-
-    next_action: readyForAnswer
-
-      ? "ready for final answer based on collected evidence"
-
-      : status === "needs_input"
-
-        ? "provide required selected_urls and call smart_deep_execute again"
-
-        : "call smart_deep_execute again to continue",
-
-    ready_for_answer: readyForAnswer,
-
-    not_final: !readyForAnswer,
-
-  };
+  return payload;
 
 }
 
@@ -1005,6 +1486,18 @@ async function handleTool(name, args) {
     case "smart_deep_execute": {
 
       return await executeDeepResearch(args);
+
+    }
+
+    case "smart_deep_run": {
+
+      return await runDeepResearchUntilBlocked(args);
+
+    }
+
+    case "smart_deep_status": {
+
+      return getDeepResearchStatus(args);
 
     }
 

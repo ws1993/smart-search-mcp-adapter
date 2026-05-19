@@ -6,7 +6,7 @@
 
 - **标准 MCP 协议**：完全兼容 MCP STDIO 传输协议（NDJSON 格式）
 
-- **多工具支持**：提供 7 个搜索与研究工具
+- **多工具支持**：提供 8 个搜索与研究工具
 
 - **深度研究模式**：先规划后执行的多步骤研究工作流
 
@@ -130,9 +130,15 @@
 
   "completed_steps": [...],
 
+  "completed_steps_delta": [...],
+
+  "completed_count": 2,
+
   "failed_steps": [...],
 
   "pending_steps": [...],
+
+  "pending_count": 1,
 
   "evidence_summary": "Completed 3/8 steps",
 
@@ -146,39 +152,59 @@
 
 ```
 
-**状态说明：**
+### 4. `smart_deep_run` ⭐ 自动执行到阻塞/完成
 
-- `planned`：计划已生成，等待执行
+自动继续执行 Deep Research，会一直向后推进，直到：
 
-- `in_progress`：正在执行中
+- 所有步骤完成
+- 遇到 `needs_input`
+- 达到 `max_steps`
 
-- `needs_input`：需要用户提供 URL 输入
+它会优先尝试从已完成的搜索/抓取结果里自动提取候选 URL，并自动填充后续 `fetch <key-url>` 步骤，减少对对话模型多轮编排的依赖。
 
-- `completed`：所有步骤已完成
+**参数：**
 
-**工作流程示例：**
+- `research_id` (必需)：研究会话 ID
 
-```
+- `max_steps` (可选)：本次自动执行的最大步骤数，默认 20
 
-1. 调用 smart_deep_research("深度调研比特币行情")
+- `selected_urls` (可选)：手动覆盖某些步骤的 URL
 
-   → 返回 research_id 和待执行步骤列表
+- `auto_select_urls` (可选)：是否自动从已有结果中选择候选 URL，默认 `true`
 
-2. 调用 smart_deep_execute(research_id, max_steps=2)
+- `format` (可选)：结果输出格式（json/markdown）
 
-   → 执行前 2 个步骤，返回结果和剩余步骤
+**典型用途：**
 
-3. 继续调用 smart_deep_execute(research_id, max_steps=2)
+- 在 Cherry Studio 这类对话式 MCP 中，减少“只规划不执行”或“执行两步就停”的情况
 
-   → 执行接下来的 2 个步骤
+- 在遇到 `fetch <key-url>` 时尽量自动继续，而不是立即阻塞
 
-4. 重复直到 ready_for_answer=true
+### 5. `smart_deep_status` ⭐ 深度研究状态查询
 
-   → 基于所有步骤结果生成最终答案
+查询某个 `research_id` 的当前状态，不执行新步骤。适合用来确认是否真的执行过、执行到了哪一步、还剩哪些步骤、是否卡在 `needs_input`。
 
-```
+**参数：**
 
-### 4. `smart_fetch`
+- `research_id` (必需)：研究会话 ID
+
+- `format` (可选)：结果输出格式（json/markdown）
+
+**返回重点字段：**
+
+- `status`
+
+- `completed_steps`
+
+- `pending_steps`
+
+- `last_step_result`
+
+- `required_inputs`
+
+- `ready_for_answer`
+
+### 6. `smart_fetch`
 
 抓取指定 URL 的网页正文，转换为 Markdown 格式。优先用 Tavily，失败则用 Firecrawl 兜底。常作为 Deep Research 的后续步骤。
 
@@ -188,7 +214,7 @@
 
 - `format` (可选)：输出格式（json/markdown）
 
-### 5. `smart_map`
+### 7. `smart_map`
 
 查看文档站点的页面结构（站点地图），当前使用 Tavily。常作为 Deep Research 的后续步骤。
 
@@ -204,7 +230,7 @@
 
 - `limit` (可选)：结果限制（默认：50）
 
-### 6. `smart_exa_search`
+### 8. `smart_exa_search`
 
 使用 Exa 搜索官方文档、API、论文、产品页等高质量内容。常作为 Deep Research 的后续步骤。
 
@@ -220,7 +246,7 @@
 
 - `exclude_domains` (可选)：排除域名（逗号分隔）
 
-### 7. `smart_doctor`
+### 9. `smart_doctor`
 
 检查 smart-search 配置、API 连通性和能力状态。仅用于配置/连通性预检，不是研究取证步骤。
 
@@ -410,6 +436,12 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 - MCP 进程结束或重启后会话失效，不做磁盘持久化
 
+- 可通过 `smart_deep_status(research_id)` 查询当前累计进度，不必触发新的执行
+
+- 每次 `smart_deep_execute` 会记录 step 级状态，便于确认执行到了哪一步
+
+- 审计日志默认写入系统临时目录下的 `smart-search-mcp-audit.jsonl`，也可通过环境变量 `SMART_SEARCH_MCP_AUDIT_LOG` 自定义路径
+
 ## 配置说明
 
 ### 环境变量
@@ -450,11 +482,29 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 [smart-search-mcp] TOOL CALL: smart_deep_research
 
-[smart-search-mcp] EXEC: smart-search deep "Rust vs Go 性能对比" --budget standard --format json
+[smart-search-mcp] [research_1234567890_abc123] PLANNED 3 steps
 
 [smart-search-mcp] TOOL CALL: smart_deep_execute
 
+[smart-search-mcp] [research_1234567890_abc123] STEP step_1 START search
+
+[smart-search-mcp] [research_1234567890_abc123] STEP step_1 CMD smart-search search "Rust vs Go 性能对比" --format json
+
+[smart-search-mcp] EXIT 0 (stdout 18234 bytes)
+
+[smart-search-mcp] [research_1234567890_abc123] STEP step_1 DONE
+
 ```
+
+如果需要事后分析完整链路：
+
+- 用 `smart_deep_status` 查询某个 `research_id` 的累计状态
+
+- 查看 stderr 中按 `research_id` 打印的 step 级日志
+
+- 查看 JSONL 审计日志，默认路径为系统临时目录下的 `smart-search-mcp-audit.jsonl`
+
+- 如需自定义审计日志路径，可设置环境变量 `SMART_SEARCH_MCP_AUDIT_LOG`
 
 ## 故障排除
 
