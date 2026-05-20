@@ -23,6 +23,28 @@ const STEP_TOOL_WHITELIST = new Set([
   "map",
   "exa-search",
   "exa_search",
+  "exa-similar",
+  "exa_similar",
+  "zhipu-search",
+  "zhipu_search",
+  "context7-library",
+  "context7_library",
+  "context7-docs",
+  "context7_docs",
+]);
+
+const SEARCH_LIKE_STEP_TOOLS = new Set([
+  "search",
+  "exa-search",
+  "exa_search",
+  "exa-similar",
+  "exa_similar",
+  "zhipu-search",
+  "zhipu_search",
+  "context7-library",
+  "context7_library",
+  "context7-docs",
+  "context7_docs",
 ]);
 
 // ─── stderr 调试日志（Cherry Studio 的 MCP 日志面板可以看到）───
@@ -752,6 +774,13 @@ function buildStepArgs(step, index, selectedUrls, format) {
     return {
       needsInput: false,
       args: ["exa-search", normalized.query || normalized.question],
+    };
+  }
+
+  if (SEARCH_LIKE_STEP_TOOLS.has(normalized.tool)) {
+    return {
+      needsInput: false,
+      args: [normalized.tool, normalized.query || normalized.question],
     };
   }
 
