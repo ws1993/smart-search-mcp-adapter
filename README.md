@@ -14,7 +14,7 @@
 
 - **跨平台兼容**：支持 Windows、Linux 和 macOS
 
-- **相对时间校正**：当 query 中出现“今天 / 昨天 / 最新 / 本月”等相对时间词时，适配器会按运行机器当前日期补齐或修正日期，降低上层模型生成过期年月的概率
+- **相对时间校正**：当 query 中出现“今天 / 昨天 / 最新 / 本月”等相对时间词时，适配器会先按时区从在线时间服务获取当前日期，再补齐或修正日期，降低上层模型生成过期年月的概率
 
 - **错误处理**：完善的错误处理和日志记录机制
 
@@ -33,6 +33,8 @@
 - `extra_sources` (可选)：补充来源数（0=不补充，1-5=额外调用 Tavily/Firecrawl）
 
 - `validation` (可选)：交叉验证强度（fast/balanced/strict）
+
+- `timezone` (可选)：IANA 时区名称，用于相对时间归一化；默认使用 `SMART_SEARCH_TIMEZONE` 或系统时区
 
 - `format` (可选)：输出格式（json/markdown）
 
@@ -59,6 +61,8 @@
 - `format` (可选)：计划输出格式（json/markdown，推荐 json）
 
 - `model` (可选)：指定模型 ID
+
+- `timezone` (可选)：IANA 时区名称，用于研究计划与后续步骤的相对时间归一化
 
 **返回结构：**
 
@@ -118,6 +122,8 @@
 
 - `selected_urls` (可选)：为需要 `<key-url>` 的步骤提供 URL，格式：`{ "step_id": "url" }`
 
+- `timezone` (可选)：IANA 时区名称，用于覆盖该研究会话的相对时间归一化时区
+
 - `format` (可选)：结果输出格式（json/markdown）
 
 **返回结构：**
@@ -173,6 +179,8 @@
 - `selected_urls` (可选)：手动覆盖某些步骤的 URL
 
 - `auto_select_urls` (可选)：是否自动从已有结果中选择候选 URL，默认 `true`
+
+- `timezone` (可选)：IANA 时区名称，用于覆盖该研究会话的相对时间归一化时区
 
 - `format` (可选)：结果输出格式（json/markdown）
 
@@ -247,6 +255,8 @@
 - `include_domains` (可选)：限定域名（逗号分隔）
 
 - `exclude_domains` (可选)：排除域名（逗号分隔）
+
+- `timezone` (可选)：IANA 时区名称，用于相对时间归一化；默认使用 `SMART_SEARCH_TIMEZONE` 或系统时区
 
 ### 9. `smart_doctor`
 
@@ -508,7 +518,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 - 如需自定义审计日志路径，可设置环境变量 `SMART_SEARCH_MCP_AUDIT_LOG`
 
-- 如果 query 里包含“今天 / 昨天 / 最新 / 本月”等相对时间词，适配器会在调用 CLI 前做时间归一化，并写入 `temporal_query_normalized` 审计事件。例如模型传入 `今日最新新闻 2025年7月`，在 2026 年 5 月 21 日运行时会修正为 `今日最新新闻 2026年5月21日`
+- 如果 query 里包含“今天 / 昨天 / 最新 / 本月”等相对时间词，适配器会先向在线时区服务获取当前日期，再在调用 CLI 前做时间归一化，并写入 `temporal_query_normalized` 审计事件。例如模型传入 `今日最新新闻 2025年7月`，在 2026 年 5 月 21 日运行时会修正为 `今日最新新闻 2026年5月21日`
 
 ## 故障排除
 
