@@ -63,3 +63,24 @@
 {"ts":"2026-05-19T10:47:51.898Z","research_id":"research_1779187640544_b25f480f","event":"step_command","step_id":"s3","tool":"fetch","command":"smart-search fetch https://semiconductor.samsung.com/emea/ssd/pc-ssd/pm9b1/mzvl41t0hblb-00b07/ --format markdown"}
 {"ts":"2026-05-19T10:47:54.283Z","research_id":"research_1779187640544_b25f480f","event":"step_completed","step_id":"s3","tool":"fetch","completed_at":"2026-05-19T10:47:54.283Z","output_bytes":33922}
 {"ts":"2026-05-19T10:47:54.283Z","research_id":"research_1779187640544_b25f480f","event":"execution_result","status":"completed","completed_count":3,"pending_count":0,"ready_for_answer":true}
+{"ts":"2026-05-20T01:21:48.758Z","research_id":"research_1779240108755_bb6bbb60","event":"planned","query":"Qwen3.6 Plus/Max 与 DeepSeek V4 Pro 模型对比优势分析 2025","budget":"deep","step_count":3}
+{"ts":"2026-05-20T01:22:19.084Z","research_id":"research_1779240108755_bb6bbb60","event":"execute_requested","max_steps":2,"auto_select_urls":true}
+{"ts":"2026-05-20T01:22:19.085Z","research_id":"research_1779240108755_bb6bbb60","event":"step_started","step_id":"s1","tool":"search","question":""}
+{"ts":"2026-05-20T01:22:19.086Z","research_id":"research_1779240108755_bb6bbb60","event":"step_command","step_id":"s1","tool":"search","command":"smart-search search \"Qwen3.6 Plus/Max 与 DeepSeek V4 Pro 模型对比优势分析 2025\" --validation balanced --extra-sources 3 --format json"}
+{"ts":"2026-05-20T01:22:46.062Z","research_id":"research_1779240108755_bb6bbb60","event":"step_completed","step_id":"s1","tool":"search","completed_at":"2026-05-20T01:22:46.062Z","output_bytes":17152}
+{"ts":"2026-05-20T01:22:46.063Z","research_id":"research_1779240108755_bb6bbb60","event":"step_started","step_id":"s2","tool":"exa-search","question":""}
+{"ts":"2026-05-20T01:22:46.064Z","research_id":"research_1779240108755_bb6bbb60","event":"step_command","step_id":"s2","tool":"exa-search","command":"smart-search exa-search \"Qwen3.6 Plus/Max 与 DeepSeek V4 Pro 模型对比优势分析 2025 risks limitations comparison\" --num-results 5 --format json"}
+{"ts":"2026-05-20T01:22:48.689Z","research_id":"research_1779240108755_bb6bbb60","event":"step_completed","step_id":"s2","tool":"exa-search","completed_at":"2026-05-20T01:22:48.689Z","output_bytes":2015}
+{"ts":"2026-05-20T01:22:48.690Z","research_id":"research_1779240108755_bb6bbb60","event":"execution_result","status":"in_progress","completed_count":2,"pending_count":1,"ready_for_answer":false}
+{"ts":"2026-05-21T06:54:54.178Z","research_id":"research_1779346494137_3f1c1bae","event":"planned","query":"Cherry Studio 同一话题追问实现机制 Side Question 源码分析","budget":"deep","step_count":3}
+{"ts":"2026-05-21T06:54:56.367Z","research_id":"research_1779346494137_3f1c1bae","event":"execute_requested","max_steps":10,"auto_select_urls":true}
+{"ts":"2026-05-21T06:54:56.368Z","research_id":"research_1779346494137_3f1c1bae","event":"step_started","step_id":"s1","tool":"search","question":""}
+{"ts":"2026-05-21T06:54:56.369Z","research_id":"research_1779346494137_3f1c1bae","event":"step_command","step_id":"s1","tool":"search","command":"smart-search search \"Cherry Studio 同一话题追问实现机制 Side Question 源码分析\" --validation balanced --extra-sources 3 --format json"}
+{"ts":"2026-05-21T06:55:24.135Z","research_id":"research_1779346494137_3f1c1bae","event":"step_completed","step_id":"s1","tool":"search","completed_at":"2026-05-21T06:55:24.135Z","output_bytes":18457}
+{"ts":"2026-05-21T06:55:24.136Z","research_id":"research_1779346494137_3f1c1bae","event":"step_started","step_id":"s2","tool":"exa-search","question":""}
+{"ts":"2026-05-21T06:55:24.137Z","research_id":"research_1779346494137_3f1c1bae","event":"step_command","step_id":"s2","tool":"exa-search","command":"smart-search exa-search \"Cherry Studio 同一话题追问实现机制 Side Question 源码分析 risks limitations comparison\" --num-results 5 --format json"}
+{"ts":"2026-05-21T06:55:26.128Z","research_id":"research_1779346494137_3f1c1bae","event":"step_completed","step_id":"s2","tool":"exa-search","completed_at":"2026-05-21T06:55:26.128Z","output_bytes":2233}
+{"ts":"2026-05-21T06:55:26.129Z","research_id":"research_1779346494137_3f1c1bae","event":"step_started","step_id":"s3","tool":"fetch","question":""}
+{"ts":"2026-05-21T06:55:26.130Z","research_id":"research_1779346494137_3f1c1bae","event":"needs_input","step_id":"s3","tool":"fetch","candidate_count":0}
+{"ts":"2026-05-21T10:34:16.152Z","event":"temporal_query_normalized","tool":"search","original_query":"今日重大新闻 2025年7月","normalized_query":"今日重大新闻 2026年5月21日","temporal_context":{"name":"today","label":"2026年5月21日","numericLabel":"2026-05-21","granularity":"date"}}
+{"ts":"2026-05-25T02:17:35.908Z","event":"temporal_query_normalized","tool":"search","original_query":"今日重要新闻 2025年7月","normalized_query":"今日重要新闻 2026年5月25日","temporal_context":{"name":"today","label":"2026年5月25日","numericLabel":"2026-05-25","granularity":"date"}}

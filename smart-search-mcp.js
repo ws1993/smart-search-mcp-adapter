@@ -391,6 +391,8 @@ function logArgs(args) {
 
 function runSmartSearch(args) {
   return new Promise((resolve, reject) => {
+    args = normalizeTemporalArgs(args);
+
     log("EXEC: smart-search " + logArgs(args));
 
     const command =
@@ -467,6 +469,272 @@ function runSmartSearch(args) {
 
 function normalizeBudget(budget) {
   return budget === "balanced" ? "standard" : budget || "standard";
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function makeLocalDate(offsetDays = 0) {
+  const date = new Date();
+
+  date.setDate(date.getDate() + offsetDays);
+
+  return date;
+}
+
+function makeLocalMonth(offsetMonths = 0) {
+  const now = new Date();
+
+  return new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1);
+}
+
+function makeLocalYear(offsetYears = 0) {
+  const now = new Date();
+
+  return now.getFullYear() + offsetYears;
+}
+
+function formatChineseDate(date) {
+  return (
+    date.getFullYear() +
+    "年" +
+    (date.getMonth() + 1) +
+    "月" +
+    date.getDate() +
+    "日"
+  );
+}
+
+function formatNumericDate(date) {
+  return (
+    date.getFullYear() +
+    "-" +
+    pad2(date.getMonth() + 1) +
+    "-" +
+    pad2(date.getDate())
+  );
+}
+
+function formatChineseMonth(date) {
+  return date.getFullYear() + "年" + (date.getMonth() + 1) + "月";
+}
+
+function formatChineseYear(year) {
+  return year + "年";
+}
+
+function getTemporalContext(query) {
+  const rules = [
+    {
+      name: "day_before_yesterday",
+      pattern: /前天/,
+      label: () => formatChineseDate(makeLocalDate(-2)),
+      numericLabel: () => formatNumericDate(makeLocalDate(-2)),
+      granularity: "date",
+    },
+    {
+      name: "yesterday",
+      pattern: /昨天|昨日/,
+      label: () => formatChineseDate(makeLocalDate(-1)),
+      numericLabel: () => formatNumericDate(makeLocalDate(-1)),
+      granularity: "date",
+    },
+    {
+      name: "tomorrow",
+      pattern: /明天|明日/,
+      label: () => formatChineseDate(makeLocalDate(1)),
+      numericLabel: () => formatNumericDate(makeLocalDate(1)),
+      granularity: "date",
+    },
+    {
+      name: "today",
+      pattern: /今天|今日|当天/,
+      label: () => formatChineseDate(makeLocalDate(0)),
+      numericLabel: () => formatNumericDate(makeLocalDate(0)),
+      granularity: "date",
+    },
+    {
+      name: "this_month",
+      pattern: /本月|这个月|当月/,
+      label: () => formatChineseMonth(makeLocalMonth(0)),
+      numericLabel: null,
+      granularity: "month",
+    },
+    {
+      name: "last_month",
+      pattern: /上月|上个月/,
+      label: () => formatChineseMonth(makeLocalMonth(-1)),
+      numericLabel: null,
+      granularity: "month",
+    },
+    {
+      name: "next_month",
+      pattern: /下月|下个月/,
+      label: () => formatChineseMonth(makeLocalMonth(1)),
+      numericLabel: null,
+      granularity: "month",
+    },
+    {
+      name: "this_year",
+      pattern: /今年|本年/,
+      label: () => formatChineseYear(makeLocalYear(0)),
+      numericLabel: null,
+      granularity: "year",
+    },
+    {
+      name: "last_year",
+      pattern: /去年/,
+      label: () => formatChineseYear(makeLocalYear(-1)),
+      numericLabel: null,
+      granularity: "year",
+    },
+    {
+      name: "next_year",
+      pattern: /明年/,
+      label: () => formatChineseYear(makeLocalYear(1)),
+      numericLabel: null,
+      granularity: "year",
+    },
+    {
+      name: "current_or_latest",
+      pattern: /最新|实时|当前|现在|目前|近况/,
+      label: () => formatChineseDate(makeLocalDate(0)),
+      numericLabel: () => formatNumericDate(makeLocalDate(0)),
+      granularity: "date",
+    },
+    {
+      name: "recent",
+      pattern: /最近|近期|近来/,
+      label: () => formatChineseDate(makeLocalDate(0)),
+      numericLabel: () => formatNumericDate(makeLocalDate(0)),
+      granularity: "date",
+    },
+  ];
+
+  const matched = rules.find((rule) => rule.pattern.test(query));
+
+  if (!matched) return null;
+
+  const label = matched.label();
+
+  return {
+    name: matched.name,
+
+    label,
+
+    numericLabel: matched.numericLabel ? matched.numericLabel() : null,
+
+    granularity: matched.granularity,
+  };
+}
+
+function containsTemporalLabel(query, context) {
+  if (query.includes(context.label)) return true;
+
+  if (context.numericLabel && query.includes(context.numericLabel)) return true;
+
+  return false;
+}
+
+function replaceTrailingStaleDate(query, context) {
+  const replacement = " " + context.label;
+
+  if (context.granularity === "year") {
+    return query.replace(/(?:\s+|[，,；;、])(?:截至\s*)?\d{4}年\s*$/, replacement);
+  }
+
+  const chineseDateSuffix =
+    /(?:\s+|[，,；;、])(?:截至\s*)?\d{4}年\d{1,2}月(?:\d{1,2}[日号])?\s*$/;
+
+  const numericDateSuffix =
+    /(?:\s+|[，,；;、])(?:截至\s*)?\d{4}[-/]\d{1,2}(?:[-/]\d{1,2})?\s*$/;
+
+  return query
+    .replace(chineseDateSuffix, replacement)
+    .replace(numericDateSuffix, replacement);
+}
+
+function normalizeTemporalQuery(query) {
+  if (!query || typeof query !== "string") {
+    return { query, changed: false };
+  }
+
+  if (/搜索时当前日期|当前日期[:：]/.test(query)) {
+    return { query, changed: false };
+  }
+
+  const context = getTemporalContext(query);
+
+  if (!context) return { query, changed: false };
+
+  const original = query;
+
+  let normalized = replaceTrailingStaleDate(query.trim(), context);
+
+  if (!containsTemporalLabel(normalized, context)) {
+    normalized = (normalized + " " + context.label).trim();
+  }
+
+  normalized = normalized.replace(/\s+/g, " ");
+
+  return {
+    query: normalized,
+
+    changed: normalized !== original,
+
+    context,
+  };
+}
+
+function primaryQueryArgIndex(tool) {
+  switch (normalizeStepTool(tool)) {
+    case "deep":
+    case "search":
+    case "exa-search":
+    case "zhipu-search":
+      return 1;
+
+    default:
+      return -1;
+  }
+}
+
+function normalizeTemporalArgs(args) {
+  if (!Array.isArray(args) || args.length < 2) return args;
+
+  const index = primaryQueryArgIndex(args[0]);
+
+  if (index < 0 || typeof args[index] !== "string") return args;
+
+  const normalized = normalizeTemporalQuery(args[index]);
+
+  if (!normalized.changed) return args;
+
+  const nextArgs = args.slice();
+
+  nextArgs[index] = normalized.query;
+
+  log(
+    "TEMPORAL QUERY: " +
+      JSON.stringify(args[index]) +
+      " -> " +
+      JSON.stringify(normalized.query),
+  );
+
+  writeAuditEvent({
+    event: "temporal_query_normalized",
+
+    tool: normalizeStepTool(args[0]),
+
+    original_query: args[index],
+
+    normalized_query: normalized.query,
+
+    temporal_context: normalized.context,
+  });
+
+  return nextArgs;
 }
 
 function makeResearchId() {
