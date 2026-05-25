@@ -24,13 +24,13 @@
 
 ### 1. `smart_search`
 
-一次性快速搜索，调用 smart-search search 命令。适合简单查询，不适合深度调研、核验、多步取证等复杂任务（这些应使用 `smart_deep_research`）。
+一次性快速搜索，调用 smart-search search 命令。本适配器会固定 provider 策略：网页补强只允许 Tavily -> Firecrawl，文档补强只允许 Exa，避免误走未配置的 Zhipu / Context7。适合简单查询，不适合深度调研、核验、多步取证等复杂任务（这些应使用 `smart_deep_research`）。
 
 **参数：**
 
 - `query` (必需)：搜索查询内容
 
-- `extra_sources` (可选)：补充来源数（0=不补充，1-5=额外调用 Tavily/Firecrawl）
+- `extra_sources` (可选)：补充来源数（0=不补充，1-5=额外调用 Tavily/Firecrawl，默认 3）
 
 - `validation` (可选)：交叉验证强度（fast/balanced/strict）
 
@@ -45,6 +45,8 @@
 深度搜索规划器。当用户提到"深度搜索/深度调研/核验/对比/选型/多来源/serious review/deep research"时优先调用此工具。生成多步骤研究计划并创建研究会话，返回 `research_id` 和待执行步骤。
 
 **重要**：此工具只生成计划，不会自动执行所有步骤。需要后续调用 `smart_deep_execute` 来执行。
+
+**Provider 策略**：适配器会在计划入库前清洗 CLI 生成的步骤，删除 `context7-library` / `context7-docs`，并把 `zhipu-search` 改写为带 allowlist 的 `search` 步骤。最终执行时，网页补强只走 Tavily -> Firecrawl，文档检索只走 Exa。
 
 **参数：**
 
@@ -242,7 +244,7 @@
 
 ### 8. `smart_exa_search`
 
-使用 Exa 搜索官方文档、API、论文、产品页等高质量内容。常作为 Deep Research 的后续步骤。
+使用 Exa 搜索官方文档、API、论文、产品页等高质量内容。常作为 Deep Research 的后续步骤；本适配器不会把文档检索兜底到 Context7。
 
 **参数：**
 
@@ -272,7 +274,7 @@
 
 2. 安装 smart-search CLI：`npm install -g smart-search`（版本 0.1.12 或更高）
 
-3. 配置所需的 API 密钥（如 Tavily、Firecrawl、Exa 等）
+3. 配置所需的 API 密钥（推荐 Tavily、Firecrawl、Exa；本适配器不会依赖 Zhipu / Context7）
 
 ### 安装适配器
 

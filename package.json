@@ -5,7 +5,7 @@
   "main": "smart-search-mcp.js",
   "scripts": {
     "start": "node smart-search-mcp.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node tests/provider-policy.test.js"
   },
   "keywords": [
     "mcp",
