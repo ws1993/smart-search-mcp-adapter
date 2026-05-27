@@ -5,6 +5,14 @@ const {
   applyProviderPolicyToPlan,
   normalizeStepArgsForProviderPolicy,
 } = require("../lib/provider-policy");
+const {
+  buildSmartSearchArgs,
+  DEFAULT_SMART_SEARCH_EXTRA_SOURCES,
+} = require("../lib/handlers/search");
+const {
+  DEFAULT_SMART_SEARCH_TIMEOUT_MS,
+  resolveSmartSearchTimeoutMs,
+} = require("../lib/cli-executor");
 
 const rawPlan = {
   mode: "deep_research",
@@ -93,5 +101,52 @@ assert.strictEqual(zhipuArgs[0], "search");
 assert(zhipuArgs.includes("--providers"));
 assert(zhipuArgs.includes(SEARCH_PROVIDER_CSV));
 assert(zhipuArgs.includes("--extra-sources"));
+
+const defaultSearchArgs = buildSmartSearchArgs({ query: "MCP timeout" });
+const defaultExtraIndex = defaultSearchArgs.indexOf("--extra-sources");
+assert(defaultExtraIndex !== -1);
+assert.strictEqual(
+  defaultSearchArgs[defaultExtraIndex + 1],
+  String(DEFAULT_SMART_SEARCH_EXTRA_SOURCES),
+);
+
+const zeroExtraArgs = buildSmartSearchArgs({
+  query: "MCP timeout",
+  extra_sources: 0,
+});
+const zeroExtraIndexes = zeroExtraArgs
+  .map((arg, index) => (arg === "--extra-sources" ? index : -1))
+  .filter((index) => index !== -1);
+assert.strictEqual(zeroExtraIndexes.length, 1);
+assert.strictEqual(zeroExtraArgs[zeroExtraIndexes[0] + 1], "0");
+
+assert.throws(
+  () => buildSmartSearchArgs({ query: "MCP timeout", extra_sources: 6 }),
+  /extra_sources must be an integer from 0 to 5/,
+);
+
+const originalTimeoutEnv = process.env.SMART_SEARCH_MCP_TIMEOUT_MS;
+try {
+  delete process.env.SMART_SEARCH_MCP_TIMEOUT_MS;
+  assert.strictEqual(
+    resolveSmartSearchTimeoutMs(),
+    DEFAULT_SMART_SEARCH_TIMEOUT_MS,
+  );
+
+  process.env.SMART_SEARCH_MCP_TIMEOUT_MS = "90000";
+  assert.strictEqual(resolveSmartSearchTimeoutMs(), 90000);
+
+  process.env.SMART_SEARCH_MCP_TIMEOUT_MS = "invalid";
+  assert.strictEqual(
+    resolveSmartSearchTimeoutMs(),
+    DEFAULT_SMART_SEARCH_TIMEOUT_MS,
+  );
+} finally {
+  if (originalTimeoutEnv === undefined) {
+    delete process.env.SMART_SEARCH_MCP_TIMEOUT_MS;
+  } else {
+    process.env.SMART_SEARCH_MCP_TIMEOUT_MS = originalTimeoutEnv;
+  }
+}
 
 console.log("provider policy tests passed");

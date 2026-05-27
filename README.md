@@ -18,7 +18,7 @@
 
 - **错误处理**：完善的错误处理和日志记录机制
 
-- **超时保护**：5 分钟超时保护，防止长时间运行的搜索阻塞
+- **超时保护**：默认 45 秒超时保护，可通过 `SMART_SEARCH_MCP_TIMEOUT_MS` 调整，并在日志中记录执行耗时，避免 Cherry Studio 先报 MCP 调用超时
 
 ## 工具说明
 
@@ -30,7 +30,7 @@
 
 - `query` (必需)：搜索查询内容
 
-- `extra_sources` (可选)：补充来源数（0=不补充，1-5=额外调用 Tavily/Firecrawl，默认 3）
+- `extra_sources` (可选)：补充来源数（0=不补充，1-5=额外调用 Tavily/Firecrawl，默认 1）
 
 - `validation` (可选)：交叉验证强度（fast/balanced/strict）
 
@@ -312,7 +312,9 @@ cd smart-search-mcp-adapter
 
     "FIRECRAWL_API_KEY": "your-firecrawl-api-key",
 
-    "EXA_API_KEY": "your-exa-api-key"
+    "EXA_API_KEY": "your-exa-api-key",
+
+    "SMART_SEARCH_MCP_TIMEOUT_MS": "45000"
 
   }
 
@@ -342,7 +344,9 @@ npm link
 
     "FIRECRAWL_API_KEY": "your-firecrawl-api-key",
 
-    "EXA_API_KEY": "your-exa-api-key"
+    "EXA_API_KEY": "your-exa-api-key",
+
+    "SMART_SEARCH_MCP_TIMEOUT_MS": "45000"
 
   }
 
@@ -468,6 +472,8 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 - `EXA_API_KEY`：Exa 搜索 API 密钥
 
+- `SMART_SEARCH_MCP_TIMEOUT_MS`：单次 smart-search CLI 调用超时时间，单位毫秒；默认 `45000`，最小 `1000`。如果 Cherry Studio 经常先报 `MCP error -32001: Request timed out`，建议将该值设得低于客户端工具调用超时，让适配器先返回可读错误；若客户端允许更长等待，再按需调大。
+
 ### Budget 参数映射
 
 为了兼容性，适配器会自动将旧的 `balanced` 映射到 `standard`：
@@ -504,7 +510,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 [smart-search-mcp] [research_1234567890_abc123] STEP step_1 CMD smart-search search "Rust vs Go 性能对比" --format json
 
-[smart-search-mcp] EXIT 0 (stdout 18234 bytes)
+[smart-search-mcp] EXIT 0 after 23841ms (stdout 18234 bytes, stderr 0 bytes)
 
 [smart-search-mcp] [research_1234567890_abc123] STEP step_1 DONE
 
@@ -552,11 +558,13 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 4. **超时错误**
 
-   - 某些搜索查询可能需要较长时间
+   - 某些搜索查询可能需要较长时间，尤其是 `extra_sources` 较大或 `validation=strict` 时
 
-   - 减少 `max_steps` 参数，分多次执行
+   - 快速搜索可将 `extra_sources` 设为 `0` 或 `1`，并优先使用 `validation=fast`
 
-   - 可以尝试简化查询或增加超时时间
+   - Deep Research 中减少 `max_steps` 参数，分多次执行
+
+   - 可以尝试简化查询，或通过 `SMART_SEARCH_MCP_TIMEOUT_MS` 调整适配器超时时间
 
 5. **连接问题**
 
@@ -594,7 +602,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 - **错误处理**：全局异常捕获和 Promise 错误处理
 
-- **超时保护**：5 分钟超时防止进程阻塞
+- **超时保护**：默认 45 秒超时，可通过 `SMART_SEARCH_MCP_TIMEOUT_MS` 调整，防止进程阻塞并避免客户端先超时
 
 ### 关键改进（v2.0）
 
